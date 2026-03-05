@@ -1,0 +1,21 @@
+Web Framework for our API
+
+fastapi==0.109.2
+uvicorn==0.27.1
+
+AI and RAG Framework
+
+langchain==0.1.9
+langchain-openai==0.0.8
+langchain-community==0.0.24
+tiktoken==0.6.0
+
+Vector Database and PDF processing
+
+chromadb==0.4.24
+pypdf==4.0.2
+
+Utilities for environment variables and data validation
+
+python-dotenv==1.0.1
+pydantic==2.6.2

@@ -1,0 +1,16 @@
+from pydantic import BaseModel
+from typing import List, Optional
+
+# Pydantic is used by FastAPI to validate incoming data.
+# This ensures that when the extension sends a request, it has the exact fields we need.
+
+class QueryRequest(BaseModel):
+    """What we expect to receive from the Chrome Extension."""
+    question: str
+    translate_to_kannada: bool = False # Defaults to False if not provided
+
+class QueryResponse(BaseModel):
+    """What we will send back to the Chrome Extension."""
+    answer: str
+    # We will optionally return snippets of the PDF so the user knows where the info came from
+    source_documents: Optional[List[str]] = []

@@ -1,0 +1,10 @@
+# Ignore Python Virtual Environment
+backend/venv/
+backend/__pycache__/
+backend/faiss_db/
+backend/temp_media/
+backend/.env
+
+# Ignore Node.js Packages
+extension/node_modules/
+.DS_Store

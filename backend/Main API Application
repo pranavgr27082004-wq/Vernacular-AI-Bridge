@@ -1,0 +1,43 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from .models import QueryRequest, QueryResponse
+
+# Initialize the FastAPI application
+app = FastAPI(title="Vernacular AI Bridge API")
+
+# Setup CORS (Cross-Origin Resource Sharing)
+# This is CRITICAL. Without this, our Chrome Extension (running in a browser) 
+# will be blocked from talking to our local Python server due to security rules.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In production, we'd restrict this to our extension's ID
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+def read_root():
+    """A simple health check endpoint to verify the server is running."""
+    return {"status": "success", "message": "Vernacular AI Bridge API is running!"}
+
+@app.post("/ask", response_model=QueryResponse)
+def ask_question(request: QueryRequest):
+    """
+    The main endpoint our extension will call.
+    Right now, it just returns a dummy response. We will plug in LangChain here in the next step.
+    """
+    print(f"Received question: {request.question}")
+    print(f"Translation requested: {request.translate_to_kannada}")
+    
+    # --- DUMMY RESPONSE ---
+    # In the next step, we will replace this with actual RAG logic
+    dummy_answer = f"This is a placeholder answer for your question: '{request.question}'"
+    
+    if request.translate_to_kannada:
+        dummy_answer += " (Imagine this is translated to Kannada)"
+
+    return QueryResponse(
+        answer=dummy_answer,
+        source_documents=["Dummy PDF Source Page 1"]
+    )
