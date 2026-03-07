@@ -2,15 +2,22 @@
     "manifest_version": 3,
     "name": "Vernacular AI Bridge",
     "version": "1.0",
-    "description": "LMS AI Assistant with Kannada Translation",
+    "description": "Multi-language AI LMS assistant with Vision",
     "permissions": [
         "sidePanel",
         "activeTab",
-        "scripting"
+        "scripting",
+        "storage"
     ],
     "host_permissions": [
         "<all_urls>"
     ],
+    "action": {
+        "default_title": "Open Vernacular Bridge"
+    },
+    "side_panel": {
+        "default_path": "index.html"
+    },
     "background": {
         "service_worker": "background.js"
     },
@@ -21,13 +28,10 @@
             ],
             "js": [
                 "content.js"
+            ],
+            "css": [
+                "content.css"
             ]
         }
-    ],
-    "side_panel": {
-        "default_path": "index.html"
-    },
-    "action": {
-        "default_title": "Open Vernacular AI Bridge"
-    }
+    ]
 }

@@ -1,0 +1,17 @@
+/* Locks the snipping canvas securely over the entire webpage */
+#vernacular-snip-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 2147483647;
+    /* Absolute maximum z-index to sit on top of everything */
+    cursor: crosshair;
+}
+
+#vernacular-snip-container canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
