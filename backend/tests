@@ -1,0 +1,34 @@
+import pytest
+from app.shopping_utils import get_mock_price_history, parse_llm_json
+
+def test_price_history_generation():
+    """Ensures the mock price history generates valid 6-month data."""
+    history = get_mock_price_history("Sony Headphones")
+    assert "current_price" in history
+    assert "average_price" in history
+    assert "six_month_trend" in history
+    assert len(history["six_month_trend"]) == 6
+
+def test_llm_json_parser_success():
+    """Ensures our robust JSON parser can extract valid data even if surrounded by markdown."""
+    raw_llm_output = '''
+    Here is your analysis:
+    ```json
+    {
+        "best_platform": "Amazon",
+        "lowest_price": "299",
+        "timing_indicator": "Buy Now",
+        "verdict": "Great deal."
+    }
+    ```
+    '''
+    parsed = parse_llm_json(raw_llm_output)
+    assert parsed["best_platform"] == "Amazon"
+    assert parsed["timing_indicator"] == "Buy Now"
+
+def test_llm_json_parser_fallback():
+    """Ensures the parser falls back gracefully if the LLM hallucinates or misses fields."""
+    bad_output = "I'm sorry, I cannot analyze this product."
+    parsed = parse_llm_json(bad_output)
+    assert parsed["best_platform"] == "Unknown"
+    assert parsed["timing_indicator"] == "Wait"

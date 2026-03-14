@@ -57,19 +57,38 @@ def initialize_knowledge_base():
     return None  # Return nothing if no file has been processed yet!
 
 def ask_document(question: str, language: str = "English"):
-    """Searches the database and answers the question."""
+    """Searches the database, or acts as a normal AI if no document exists."""
     vector_db = initialize_knowledge_base()
     
-    # Safety check if the user hasn't uploaded a PDF or Video yet!
+    # ==========================================
+    # MODE 1: NORMAL CHAT (No Document Uploaded)
+    # ==========================================
     if not vector_db:
-        return "I don't have a document or video to read yet! Please upload one first."
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
+        prompt = f"""
+        You are Vernacular Bridge, a highly intelligent, friendly, and helpful AI Assistant.
+        The user is chatting with you directly. Answer their question or greeting naturally.
         
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0) 
+        IMPORTANT RULE: You MUST write your response fluently in {language}.
+        
+        User: {question}
+        AI Response:"""
+        
+        response = llm.invoke(prompt)
+        return response.content.strip()
+        
+    # ==========================================
+    # MODE 2: RAG CHAT (Document/Video is Uploaded)
+    # ==========================================
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3) 
     docs = vector_db.similarity_search(question, k=3)
     context = "\n\n".join([doc.page_content for doc in docs])
     
-    prompt = f"""Use the following context from a document or video to answer the question. 
-    If the answer is not in the context, say "I cannot answer this based on the provided material."
+    prompt = f"""
+    You are Vernacular Bridge, a helpful AI assistant. 
+    
+    Attempt to use the following context from a loaded document/video to answer the question. 
+    If the answer is NOT in the context (like a general greeting or random question), use your general AI knowledge to answer the user naturally, but briefly mention that it isn't related to the loaded document.
     
     IMPORTANT RULE: You MUST write your final answer fluently in {language}.
     
@@ -81,4 +100,4 @@ def ask_document(question: str, language: str = "English"):
     Answer (in {language}):"""
     
     response = llm.invoke(prompt)
-    return response.content
+    return response.content.strip()

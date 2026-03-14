@@ -11,7 +11,7 @@ function createAskAIButton() {
         position: fixed !important;
         bottom: 20px !important;
         right: 20px !important;
-        z-index: 2147483646 !important; /* One layer below the snipping tool */
+        z-index: 2147483646 !important;
         background-color: #4f46e5 !important;
         color: white !important;
         border: none !important;
@@ -27,7 +27,6 @@ function createAskAIButton() {
     btn.onmouseover = () => btn.style.backgroundColor = '#4338ca';
     btn.onmouseout = () => btn.style.backgroundColor = '#4f46e5';
 
-    // Send a message to the background script to open the panel
     btn.onclick = () => {
         chrome.runtime.sendMessage({ action: "OPEN_SIDE_PANEL" });
     };
@@ -35,12 +34,10 @@ function createAskAIButton() {
     document.body.appendChild(btn);
 }
 
-// Inject the button when the page loads
 createAskAIButton();
 
-
 // ==========================================
-// 2. SNIPPING TOOL, VISION AI & WEB SCRAPER
+// 2. SCRAPING, SNIPPING & VISION
 // ==========================================
 let overlayCanvas, drawCanvas, ctx, startX, startY, isDrawing = false;
 let img = new Image();
@@ -49,11 +46,108 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "START_SNIPPING") {
         initSnippingTool();
     } else if (request.action === "SCRAPE_WEBPAGE") {
-        // NEW FEATURE: Web Scraping Logic
-        // Grabs all visible text from the webpage and cleans up excess whitespace
         const pageText = document.body.innerText.replace(/\s+/g, ' ').trim();
-        // Send the text (capped at a safe limit) and the page title back to React
         sendResponse({ text: pageText.substring(0, 50000), title: document.title });
+    } else if (request.action === "SCRAPE_PRODUCT") {
+        let productName = document.title;
+        let productDetails = "";
+        let extractedPrice = "";
+
+        // --- ULTIMATE PRICE EXTRACTOR ---
+
+        // Priority 1: Specific Main Buy Box Selectors (Amazon & Flipkart)
+        // These target the ACTUAL main price area, ignoring related items or EMIs.
+        const preciseSelectors = [
+            '#corePriceDisplay_desktop_feature_div .a-price-whole',
+            '#corePrice_feature_div .a-price-whole',
+            '#priceblock_ourprice',
+            '#priceblock_dealprice',
+            'div.Nx9bqj.pNxLdS',
+            'div._30jeq3._16Jk6d'
+        ];
+
+        for (const sel of preciseSelectors) {
+            const el = document.querySelector(sel);
+            if (el) {
+                // Use textContent to penetrate hidden/nested spans
+                const text = el.textContent || el.innerText || "";
+                const num = text.replace(/[^0-9]/g, '');
+                if (num && parseInt(num) > 100) {
+                    extractedPrice = num;
+                    break;
+                }
+            }
+        }
+
+        // Priority 2: JSON-LD Semantic Data Fallback (Invisible SEO data)
+        if (!extractedPrice) {
+            const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
+            for (let script of ldScripts) {
+                try {
+                    const data = JSON.parse(script.innerText);
+                    const items = Array.isArray(data) ? data : [data];
+                    for (let item of items) {
+                        if (item.offers && item.offers.price) {
+                            extractedPrice = String(item.offers.price).replace(/[^0-9]/g, '');
+                            break;
+                        }
+                    }
+                } catch (e) { }
+                if (extractedPrice) break;
+            }
+        }
+
+        // Priority 3: Generic Fallback (Find the highest realistic price on page)
+        if (!extractedPrice) {
+            const genericSelectors = ['.a-price-whole', '.Nx9bqj', '._30jeq3'];
+            for (const sel of genericSelectors) {
+                const els = document.querySelectorAll(sel);
+                for (let el of els) {
+                    const text = el.textContent || el.innerText || "";
+                    const num = text.replace(/[^0-9]/g, '');
+                    const val = parseInt(num);
+                    // Filter out small EMIs (usually < 500)
+                    if (val && val > 500 && val < 500000) {
+                        extractedPrice = num;
+                        break;
+                    }
+                }
+                if (extractedPrice) break;
+            }
+        }
+
+        // --- DETAILS EXTRACTOR ---
+        const ldJsonScripts = document.querySelectorAll('script[type="application/ld+json"]');
+        for (let script of ldJsonScripts) {
+            try {
+                const data = JSON.parse(script.innerText);
+                const items = Array.isArray(data) ? data : [data];
+                for (let item of items) {
+                    if (item['@type'] === 'Product' || item['@type'] === 'ProductGroup') {
+                        productName = item.name || productName;
+                        productDetails = item.description || "";
+                        break;
+                    }
+                }
+            } catch (e) { /* Ignore parsing errors */ }
+        }
+
+        if (!productDetails) {
+            const h1 = document.querySelector('h1');
+            if (h1) productName = h1.innerText;
+            const metaDesc = document.querySelector('meta[name="description"]');
+            if (metaDesc) productDetails = metaDesc.content;
+        }
+
+        // Failsafe string assignment
+        productDetails = productDetails || "Product details not found visually.";
+
+        // 3. Inject the EXACT scraped price so the Python backend never falls back to 15,000!
+        if (extractedPrice) {
+            productDetails += `\n[PRICE_ON_PAGE: ${extractedPrice}]`;
+        }
+
+        sendResponse({ name: productName, details: productDetails });
     }
 });
 
@@ -140,24 +234,19 @@ function onMouseUp(e) {
     const cropCtx = cropCanvas.getContext('2d');
 
     cropCtx.drawImage(overlayCanvas, x, y, width, height, 0, 0, width, height);
-
     const base64Image = cropCanvas.toDataURL('image/png');
 
-    // Spawn the floating input box instead of the alert
     createFloatingInput(base64Image, x, y, width, height);
 
-    // Lock the drawing canvas so they can't draw another box accidentally
     drawCanvas.removeEventListener('mousedown', onMouseDown);
     drawCanvas.removeEventListener('mousemove', onMouseMove);
     drawCanvas.removeEventListener('mouseup', onMouseUp);
 }
 
-// The Floating Input UI that talks to your Python server
 function createFloatingInput(base64Image, x, y, width, height) {
     const container = document.createElement('div');
     container.id = 'vernacular-vision-input';
 
-    // Boundary checks so the box never spawns off-screen
     let leftPos = x;
     if (leftPos + 320 > window.innerWidth) leftPos = window.innerWidth - 340;
     if (leftPos < 10) leftPos = 10;
@@ -183,7 +272,6 @@ function createFloatingInput(base64Image, x, y, width, height) {
         box-sizing: border-box !important;
     `;
 
-    // Drag Handle so you can move it around!
     const dragHeader = document.createElement('div');
     dragHeader.innerHTML = '⠿ Drag to move';
     dragHeader.style.cssText = `
@@ -197,11 +285,9 @@ function createFloatingInput(base64Image, x, y, width, height) {
         margin-top: -5px !important;
     `;
 
-    // Dragging Logic
     dragHeader.onmousedown = (e) => {
         let isDragging = true;
         dragHeader.style.cursor = 'grabbing';
-
         const rect = container.getBoundingClientRect();
         const offsetX = e.clientX - rect.left;
         const offsetY = e.clientY - rect.top;
@@ -227,16 +313,7 @@ function createFloatingInput(base64Image, x, y, width, height) {
     input.type = 'text';
     input.placeholder = 'Ask AI about this image...';
     input.style.cssText = `
-        padding: 10px !important; 
-        border: 2px solid #e5e7eb !important; 
-        border-radius: 6px !important; 
-        outline: none !important; 
-        font-size: 14px !important;
-        color: black !important;
-        background: white !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-        display: block !important;
+        padding: 10px !important; border: 2px solid #e5e7eb !important; border-radius: 6px !important; outline: none !important; font-size: 14px !important; color: black !important; background: white !important; width: 100% !important; box-sizing: border-box !important; display: block !important;
     `;
     input.onfocus = () => input.style.borderColor = '#4f46e5';
     input.onblur = () => input.style.borderColor = '#e5e7eb';
@@ -244,55 +321,24 @@ function createFloatingInput(base64Image, x, y, width, height) {
     const sendBtn = document.createElement('button');
     sendBtn.innerText = '✨ Analyze Image';
     sendBtn.style.cssText = `
-        padding: 10px !important; 
-        background: #4f46e5 !important; 
-        color: white !important; 
-        border: none !important; 
-        border-radius: 6px !important; 
-        cursor: pointer !important; 
-        font-weight: bold !important;
-        width: 100% !important;
-        display: block !important;
+        padding: 10px !important; background: #4f46e5 !important; color: white !important; border: none !important; border-radius: 6px !important; cursor: pointer !important; font-weight: bold !important; width: 100% !important; display: block !important;
     `;
     sendBtn.onmouseover = () => sendBtn.style.backgroundColor = '#4338ca';
     sendBtn.onmouseout = () => sendBtn.style.backgroundColor = '#4f46e5';
 
     const resultDiv = document.createElement('div');
     resultDiv.style.cssText = `
-        font-size: 14px !important; 
-        color: #1f2937 !important; 
-        margin-top: 5px !important; 
-        display: none; 
-        line-height: 1.5 !important; 
-        max-height: 200px !important; 
-        overflow-y: auto !important; 
-        word-wrap: break-word !important;
-        background: transparent !important;
-        text-align: left !important;
+        font-size: 14px !important; color: #1f2937 !important; margin-top: 5px !important; display: none; line-height: 1.5 !important; max-height: 200px !important; overflow-y: auto !important; word-wrap: break-word !important; background: transparent !important; text-align: left !important;
     `;
 
     const closeBtn = document.createElement('button');
     closeBtn.innerText = '✖';
     closeBtn.style.cssText = `
-        position: absolute !important; 
-        top: -10px !important; 
-        right: -10px !important; 
-        background: #ef4444 !important; 
-        color: white !important; 
-        border: none !important; 
-        border-radius: 50% !important; 
-        width: 24px !important; 
-        height: 24px !important; 
-        cursor: pointer !important; 
-        font-size: 12px !important; 
-        display: flex !important; 
-        align-items: center !important; 
-        justify-content: center !important;
+        position: absolute !important; top: -10px !important; right: -10px !important; background: #ef4444 !important; color: white !important; border: none !important; border-radius: 50% !important; width: 24px !important; height: 24px !important; cursor: pointer !important; font-size: 12px !important; display: flex !important; align-items: center !important; justify-content: center !important;
     `;
     closeBtn.onclick = closeSnippingTool;
 
     sendBtn.onclick = async () => {
-        // Automatically ask to explain if left empty
         const userPrompt = input.value.trim() || "Please explain this image in detail.";
 
         sendBtn.innerText = 'Thinking... 🤔';
@@ -317,45 +363,21 @@ function createFloatingInput(base64Image, x, y, width, height) {
             if (!response.ok) throw new Error("Backend connection failed.");
             const data = await response.json();
 
-            // Clear "Thinking..."
             resultDiv.innerHTML = '';
-
-            // Add the text response
             const responseText = document.createElement('div');
             responseText.innerHTML = `<strong>Response:</strong><br>${data.answer.replace(/\n/g, '<br>')}`;
 
-            // NEW FEATURE: Add the Text-to-Speech (TTS) Button
             const ttsBtn = document.createElement('button');
             ttsBtn.innerHTML = '🔊 Read Aloud';
             ttsBtn.style.cssText = `
-                margin-top: 10px !important; 
-                padding: 6px 10px !important; 
-                background: #e0e7ff !important; 
-                color: #4f46e5 !important; 
-                border: none !important; 
-                border-radius: 4px !important; 
-                cursor: pointer !important; 
-                font-size: 12px !important; 
-                font-weight: bold !important;
-                width: 100% !important;
-                display: block !important;
+                margin-top: 10px !important; padding: 6px 10px !important; background: #e0e7ff !important; color: #4f46e5 !important; border: none !important; border-radius: 4px !important; cursor: pointer !important; font-size: 12px !important; font-weight: bold !important; width: 100% !important; display: block !important;
             `;
 
             ttsBtn.onclick = () => {
-                window.speechSynthesis.cancel(); // Stop any current audio
+                window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(data.answer);
-
-                // Map the selected language to standard speech codes
-                const langMap = {
-                    'English': 'en-US',
-                    'Kannada': 'kn-IN',
-                    'Hindi': 'hi-IN',
-                    'Telugu': 'te-IN',
-                    'Tamil': 'ta-IN',
-                    'Malayalam': 'ml-IN'
-                };
+                const langMap = { 'English': 'en-US', 'Kannada': 'kn-IN', 'Hindi': 'hi-IN', 'Telugu': 'te-IN', 'Tamil': 'ta-IN', 'Malayalam': 'ml-IN' };
                 utterance.lang = langMap[lang] || 'en-US';
-
                 window.speechSynthesis.speak(utterance);
             };
 
@@ -380,12 +402,11 @@ function createFloatingInput(base64Image, x, y, width, height) {
     container.appendChild(sendBtn);
     container.appendChild(resultDiv);
     document.body.appendChild(container);
-
     input.focus();
 }
 
 function closeSnippingTool() {
-    window.speechSynthesis.cancel(); // Stop audio if they close the tool!
+    window.speechSynthesis.cancel();
     const container = document.getElementById('vernacular-snip-container');
     if (container) container.remove();
 
